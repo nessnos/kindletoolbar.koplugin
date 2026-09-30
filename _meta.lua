@@ -1,5 +1,6 @@
 local _ = require("gettext")
 return {
     fullname = _("Kindle-style toolbar"),
-    description = _([[Tap the middle of the page to show a Kindle-style toolbar: the book's quick buttons at the top, and chapter, page, time left and a progress slider for skimming at the bottom. The slider remembers where you started, so you can jump back.]]),
+    version = "1.0.0",
+    description = _([[A KindleOS-style reading toolbar. Tap the middle or the top of the page (or swipe down from the top) to show the book's quick buttons, a zoomed-out view of the page with its neighbours, and chapter, page, time left and a progress slider that remembers where you started.]]),
 }

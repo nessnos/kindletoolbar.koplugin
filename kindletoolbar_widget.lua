@@ -1045,6 +1045,7 @@ local ACTION_LABELS = {
     book_info = _("Book Information"),
     book_statistics = _("Reading Statistics"),
     show_menu = _("KOReader Menu"),
+    kindle_toolbar_settings = _("Toolbar Settings"),
 }
 
 function KindleToolbarWidget:makeDots(ipad, icon)

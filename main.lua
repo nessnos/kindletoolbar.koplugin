@@ -20,13 +20,37 @@ local logger = require("logger")
 local _ = require("gettext")
 
 local ZONE_ID = "kindletoolbar_tap"
+local TOP_TAP_ID = "kindletoolbar_top_tap"
+local TOP_EXT_TAP_ID = "kindletoolbar_top_ext_tap"
+local TOP_SWIPE_ID = "kindletoolbar_top_swipe"
+local TOP_EXT_SWIPE_ID = "kindletoolbar_top_ext_swipe"
+local TOP_PAN_ID = "kindletoolbar_top_pan"
+local TOP_EXT_PAN_ID = "kindletoolbar_top_ext_pan"
 
 -- Zones that must keep priority over ours (tapping a link or an existing highlight
--- in the middle of the page should still do what it always did).
+-- should still do what it always did; so should corner taps you've set up in
+-- Taps and gestures, e.g. the bookmark corner).
 local ZONES_BEFORE_US = {
     "tap_link",
     "readerhighlight_tap",
     "readerhighlight_tap_select_mode",
+}
+local TOP_ZONES_BEFORE_US = {
+    "tap_link",
+    "readerhighlight_tap",
+    "readerhighlight_tap_select_mode",
+    "tap_top_left_corner",
+    "tap_top_right_corner",
+}
+-- which "before us" list applies to each of our zones
+local OUR_ZONES = {
+    [ZONE_ID] = ZONES_BEFORE_US,
+    [TOP_TAP_ID] = TOP_ZONES_BEFORE_US,
+    [TOP_EXT_TAP_ID] = TOP_ZONES_BEFORE_US,
+    [TOP_SWIPE_ID] = {},
+    [TOP_EXT_SWIPE_ID] = {},
+    [TOP_PAN_ID] = {},
+    [TOP_EXT_PAN_ID] = {},
 }
 
 -- Tap area presets (screen ratios). They avoid the top/bottom 1/5 of the screen,
@@ -44,10 +68,12 @@ local DEFAULTS = {
     info_mode = "chapter_time",
     zoom_pages = true,
     hide_wifi_off = false,
+    top_tap = true,     -- tapping the top of the page opens the toolbar (not KOReader's menu)
+    top_swipe = true,   -- same for swiping down from the top
 }
 
 -- What the ⋮ menu offers out of the box (Dispatcher action ids, in order).
-local DEFAULT_MORE_ACTIONS = { "go_to", "toggle_bookmark", "book_info", "book_statistics", "show_menu" }
+local DEFAULT_MORE_ACTIONS = { "go_to", "toggle_bookmark", "book_info", "book_statistics", "show_menu", "kindle_toolbar_settings" }
 
 local function defaultMoreActions()
     -- show_as_quickmenu only makes "Arrange actions" offer group separators
@@ -207,6 +233,16 @@ function KindleToolbar:getMoreActions()
         cfg.quickmenu_separators = { book_statistics = true }
     end
     cfg.show_as_quickmenu = true
+    if not self.settings.added_settings_entry then
+        -- v3.2: offer the plugin's own settings in the ⋮ menu (once; removable)
+        self.settings.added_settings_entry = true
+        local actions = self.settings.more_actions
+        if not actions.kindle_toolbar_settings then
+            actions.kindle_toolbar_settings = true
+            if type(cfg.order) == "table" then table.insert(cfg.order, "kindle_toolbar_settings") end
+        end
+        self:saveSettings()
+    end
     if self.updated then -- changed through the Dispatcher menu
         self.updated = nil
         self:saveSettings()
@@ -226,6 +262,12 @@ function KindleToolbar:saveSettings()
 end
 
 function KindleToolbar:onDispatcherRegisterActions()
+    Dispatcher:registerAction("kindle_toolbar_settings", {
+        category = "none",
+        event = "ShowKindleToolbarSettings",
+        title = _("Kindle-style toolbar: settings"),
+        reader = true,
+    })
     Dispatcher:registerAction("kindle_toolbar_show", {
         category = "none",
         event = "ShowKindleToolbar",
@@ -254,6 +296,41 @@ function KindleToolbar:registerZone()
             end,
         },
     })
+    self:registerTopZones()
+end
+
+-- The top of the page: the same areas KOReader uses to open its menu
+-- (a strip along the top, and a taller one in the middle). When the option is on,
+-- we answer first and open the toolbar; when it's off we step aside.
+function KindleToolbar:registerTopZones()
+    local menu_zone = G_defaults:readSetting("DTAP_ZONE_MENU")
+    local menu_ext = G_defaults:readSetting("DTAP_ZONE_MENU_EXT")
+    local function sz(z) return { ratio_x = z.x, ratio_y = z.y, ratio_w = z.w, ratio_h = z.h } end
+    local function onTap()
+        if not self.settings.top_tap then return false end
+        self:showToolbar()
+        return true
+    end
+    local function onSwipe(ges)
+        if not self.settings.top_swipe or ges.direction ~= "south" then return false end
+        self:showToolbar()
+        self.ui:handleEvent(Event:new("HandledAsSwipe")) -- cancel any pan scroll made
+        return true
+    end
+    self.ui:registerTouchZones({
+        { id = TOP_TAP_ID, ges = "tap", screen_zone = sz(menu_zone),
+          overrides = { "readermenu_tap", "tap_forward", "tap_backward" }, handler = onTap },
+        { id = TOP_EXT_TAP_ID, ges = "tap", screen_zone = sz(menu_ext),
+          overrides = { "readermenu_ext_tap", "readermenu_tap", TOP_TAP_ID, "tap_forward", "tap_backward" }, handler = onTap },
+        { id = TOP_SWIPE_ID, ges = "swipe", screen_zone = sz(menu_zone),
+          overrides = { "readermenu_swipe", "rolling_swipe", "paging_swipe" }, handler = onSwipe },
+        { id = TOP_EXT_SWIPE_ID, ges = "swipe", screen_zone = sz(menu_ext),
+          overrides = { "readermenu_ext_swipe", "readermenu_swipe", TOP_SWIPE_ID, "rolling_swipe", "paging_swipe" }, handler = onSwipe },
+        { id = TOP_PAN_ID, ges = "pan", screen_zone = sz(menu_zone),
+          overrides = { "readermenu_pan", "rolling_pan", "paging_pan" }, handler = onSwipe },
+        { id = TOP_EXT_PAN_ID, ges = "pan", screen_zone = sz(menu_ext),
+          overrides = { "readermenu_ext_pan", "readermenu_pan", TOP_PAN_ID, "rolling_pan", "paging_pan" }, handler = onSwipe },
+    })
 end
 
 -- Make sure link / highlight taps are checked before ours. Other modules re-register
@@ -262,12 +339,16 @@ end
 function KindleToolbar:fixZoneOrder()
     local ui = self.ui
     local dg = ui.touch_zone_dg
-    if not dg or not dg:checkNode(ZONE_ID) then return end
+    if not dg then return end
     local changed = false
-    for _, id in ipairs(ZONES_BEFORE_US) do
-        if dg:checkNode(id) then
-            dg:addNodeDep(ZONE_ID, id)
-            changed = true
+    for our_id, before in pairs(OUR_ZONES) do
+        if dg:checkNode(our_id) then
+            for _, id in ipairs(before) do
+                if dg:checkNode(id) then
+                    dg:addNodeDep(our_id, id)
+                    changed = true
+                end
+            end
         end
     end
     if changed then
@@ -466,8 +547,14 @@ function KindleToolbar:addToMainMenu(menu_items)
 
     menu_items.kindle_toolbar = {
         text = _("Kindle-style toolbar"),
-        sorting_hint = "taps_and_gestures",
-        sub_item_table = {
+        -- top level of the Settings (gear) tab, where it's easy to find
+        sorting_hint = "setting",
+        sub_item_table = self:buildSettingsItems(zone_names, zone_items, mode_names, mode_items),
+    }
+end
+
+function KindleToolbar:buildSettingsItems(zone_names, zone_items, mode_names, mode_items)
+    return {
             {
                 text = _("Show toolbar when tapping the middle of the page"),
                 checked_func = function() return self.settings.enabled end,
@@ -481,6 +568,25 @@ function KindleToolbar:addToMainMenu(menu_items)
                     return _("Middle tap area") .. ": " .. (zone_names[self.settings.zone] or "")
                 end,
                 sub_item_table = zone_items,
+            },
+            {
+                text = _("Tapping the top of the page opens the toolbar"),
+                help_text = _("Instead of KOReader's menu. Corner taps you've set up in Taps and gestures keep working. The toolbar's top row (clock, chevron) still opens KOReader's menu."),
+                checked_func = function() return self.settings.top_tap end,
+                callback = function()
+                    self.settings.top_tap = not self.settings.top_tap
+                    self:saveSettings()
+                end,
+            },
+            {
+                text = _("Swiping down from the top opens the toolbar"),
+                help_text = _("Instead of KOReader's menu."),
+                checked_func = function() return self.settings.top_swipe end,
+                callback = function()
+                    self.settings.top_swipe = not self.settings.top_swipe
+                    self:saveSettings()
+                end,
+                separator = true,
             },
             {
                 text_func = function()
@@ -571,8 +677,32 @@ function KindleToolbar:addToMainMenu(menu_items)
                     self:saveSettings()
                 end,
             },
-        },
     }
+end
+
+--- Open just this plugin's settings, as a one-tab KOReader menu.
+function KindleToolbar:onShowKindleToolbarSettings()
+    local items = {}
+    self:addToMainMenu(items)
+    local tab = items.kindle_toolbar.sub_item_table
+    tab.icon = "appbar.settings"
+    local CenterContainer = require("ui/widget/container/centercontainer")
+    local TouchMenu = require("ui/widget/touchmenu")
+    local Screen = Device.screen
+    local container = CenterContainer:new{
+        covers_header = true,
+        ignore = "height",
+        dimen = Screen:getSize(),
+    }
+    local menu = TouchMenu:new{
+        width = Screen:getWidth(),
+        tab_item_table = { tab },
+        show_parent = container,
+    }
+    menu.close_callback = function() UIManager:close(container) end
+    container[1] = menu
+    UIManager:show(container)
+    return true
 end
 
 return KindleToolbar
