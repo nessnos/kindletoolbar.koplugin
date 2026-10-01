@@ -14,11 +14,12 @@ A reading toolbar for [KOReader](https://github.com/koreader/koreader) that look
 **Opens the way a Kindle does**
 - Tap the middle of the page.
 - Tap anywhere along the top of the page, or swipe down from the top. This replaces KOReader's menu there, and each gesture can be switched off.
+- Choose **Middle and top of the page** (the default) or **Top of the page only**: in the settings, or straight from **⋮ → Open Toolbar With…**.
 - Links, highlights and corner gestures you've set up keep working as before.
 
 **Top bar**
-- Clock, a pull-down chevron, Wi-Fi, and the battery level with a KindleOS-style horizontal battery. Tap this row to open KOReader's own menu.
-- **‹ Library**, **Aa** (fonts and layout), **table of contents**, **notebook** (bookmarks, highlights and notes), **search** and **⋮**.
+- A status bar with the clock, a pull-down chevron, Wi-Fi, and the battery level with a horizontal battery. Tap it to open KOReader's own menu.
+- **← Library**, **Aa** (fonts and layout), **table of contents**, **notebook** (bookmarks, highlights and notes), **search** and **⋮**.
 - The book's title.
 
 **The page, zoomed out**
@@ -38,10 +39,10 @@ A reading toolbar for [KOReader](https://github.com/koreader/koreader) that look
 - Once you start reading from the new page, the pin goes away.
 
 **⋮ menu in KindleOS style**
-- A plain dropdown with Go to Page, Add/Remove Bookmark, Book Information, Reading Statistics, KOReader Menu and Toolbar Settings.
+- A plain dropdown with Go to Page, Add/Remove Bookmark, Book Information, Reading Statistics, KOReader Menu, Open Toolbar With… and Toolbar Settings.
 - You can use any KOReader action instead, change the order and add dividing lines.
 
-**Where "‹ Library" takes you**
+**Where "← Library" takes you**
 - KOReader's file browser (the default).
 - Or **Library**, **Home screen**, **Authors** or **Series**, when you use a home-screen plugin that offers them, such as KindleUI or [SimpleUI](https://github.com/doctorhetfield-cmd/simpleui.koplugin).
 - Or, if [Bookshelf](https://github.com/AndyHazz/bookshelf.koplugin) is installed: Bookshelf.
@@ -73,12 +74,13 @@ Open a book, then go to KOReader's menu → **Settings (⚙)** → **Kindle-styl
 
 | Setting | What it does |
 |---|---|
-| Show toolbar when tapping the middle of the page | Turns the middle tap on or off. |
+| Open the toolbar from | **Middle and top of the page** (default) or **Top of the page only**. Also in **⋮ → Open Toolbar With…**. |
+| Tapping the middle of the page opens the toolbar | Fine-tuning: the middle tap on its own. |
 | Middle tap area | Small, Medium (default) or Large. |
 | Tapping the top of the page opens the toolbar | On by default. Turn it off to get KOReader's menu back there. |
 | Swiping down from the top opens the toolbar | On by default. Turn it off to get KOReader's menu back there. |
 | Bottom line shows | Time or pages left, in the chapter or the book. You can also tap the line on the toolbar. |
-| ‹ Library button opens | File browser, Library, Home screen, Authors, Series or Bookshelf. Choices your device can't use are greyed out. |
+| Library button opens | File browser, Library, Home screen, Authors, Series or Bookshelf. Choices your device can't use are greyed out. |
 | Show the page zoomed out, with the pages around it | Off gives a lighter toolbar that sits over the page as it is. |
 | ⋮ menu | Pick the actions, **Arrange actions** to reorder them and tick items to add a dividing line after them, or **Reset to default**. |
 | Hide the Wi-Fi icon when Wi-Fi is off | |
@@ -92,7 +94,7 @@ There are also two actions you can assign to any gesture in **Taps and gestures 
 With the toolbar open, tap the top row (the clock and the chevron). You can also use **⋮ → KOReader Menu**, or turn off "Tapping the top of the page opens the toolbar".
 
 **Tapping the middle of the page used to turn the page. What now?**
-Tap the right side of the page to go forward and the left side to go back, as before. Only the middle area opens the toolbar, and you can make it smaller or turn it off.
+Tap the right side of the page to go forward and the left side to go back, as before. Only the middle area opens the toolbar. You can make it smaller, or choose **Top of the page only** so the middle doesn't open it at all.
 
 **The side pages show a page number for a moment.**
 They're drawn in the background by KOReader's page thumbnailer, so the first time can take a second. After that they're cached.
@@ -126,7 +128,7 @@ Bug reports and pull requests are welcome. Please mention your device, your KORe
 
 - Inspired by the reading toolbar of Amazon's KindleOS.
 - Built for [KOReader](https://github.com/koreader/koreader).
-- The status row (clock, Wi-Fi, battery) is drawn the same way as KindleUI's top bar: the Wi-Fi icon from the Nerd Fonts symbols that ship with KOReader, and KindleUI's horizontal battery. It doesn't need KindleUI or [SimpleUI](https://github.com/doctorhetfield-cmd/simpleui.koplugin) to be installed.
+- The status bar uses the Wi-Fi icon from the Nerd Fonts symbols that ship with KOReader and the same horizontal battery as KindleUI. It doesn't need KindleUI or [SimpleUI](https://github.com/doctorhetfield-cmd/simpleui.koplugin) to be installed.
 
 ## License
 

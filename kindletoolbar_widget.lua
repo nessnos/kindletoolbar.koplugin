@@ -566,11 +566,11 @@ function KindleToolbarWidget:buildTop()
     local inner_w = self.inner_w
 
     -- Status row: clock | chevron | wifi battery%
-    local status_h = S(28)
-    -- Small text like KindleOS' status bar. The Nerd Font Wi-Fi glyph uses the same
-    -- face (it comes from KOReader's built-in symbol fallback font, so no other plugin
-    -- is needed); two spaces between items and one between "82%" and the battery.
-    local status_face = Font:getFace("cfont", 14)
+    local status_h = S(34)
+    -- Same size and spacing as KindleUI's top bar (18). The Nerd Font Wi-Fi glyph uses
+    -- the same face (it comes from KOReader's built-in symbol fallback font, so no other
+    -- plugin is needed); two spaces between items and one between "82%" and the battery.
+    local status_face = Font:getFace("cfont", 18)
     local icon_face = status_face
     local clock = datetime.secondsToHour(os.time(), G_reader_settings:isTrue("twelve_hour_clock"))
     local right = HorizontalGroup:new{ align = "center" }
