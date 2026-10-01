@@ -73,13 +73,21 @@ local DEFAULTS = {
 }
 
 -- What the ⋮ menu offers out of the box (Dispatcher action ids, in order).
-local DEFAULT_MORE_ACTIONS = { "go_to", "toggle_bookmark", "book_info", "book_statistics", "show_menu", "kindle_toolbar_settings" }
+local DEFAULT_MORE_ACTIONS = { "go_to", "toggle_bookmark", "book_info", "book_statistics", "show_menu", "kindle_toolbar_open_with", "kindle_toolbar_settings" }
+
+-- Where on the page the toolbar opens from (see getOpenMode / setOpenMode).
+local OPEN_MODES = { "middle_top", "top" }
+local OPEN_MODE_NAMES = {
+    middle_top = _("Middle and top of the page"),
+    top = _("Top of the page only"),
+}
+
 
 local function defaultMoreActions()
     -- show_as_quickmenu only makes "Arrange actions" offer group separators
     -- (we always run the picked action directly, never as a QuickMenu).
     local t = { settings = { order = {}, show_as_quickmenu = true, quickmenu_separators = { book_statistics = true } } }
-    for _, id in ipairs(DEFAULT_MORE_ACTIONS) do
+    for _i, id in ipairs(DEFAULT_MORE_ACTIONS) do
         t[id] = true
         table.insert(t.settings.order, id)
     end
@@ -91,7 +99,7 @@ end
 -- A home-screen plugin that offers Library / Home / Authors / Series (SimpleUI,
 -- or plugins built on it such as KindleUI). Found by what it can do, not its name.
 local function homePlugin(ui)
-    for _, key in ipairs{ "simpleui", "kindleui", "KindleUI" } do
+    for _i, key in ipairs{ "simpleui", "kindleui", "KindleUI" } do
         local p = ui[key]
         if type(p) == "table" and p.onSimpleUIGoLibrary then return p end
     end
@@ -177,7 +185,7 @@ end
 
 function KindleToolbar:getLibraryTarget()
     local wanted = self.settings.library_target or "filebrowser"
-    for _, t in ipairs(LIBRARY_TARGETS) do
+    for _i, t in ipairs(LIBRARY_TARGETS) do
         if t.id == wanted and t.available(self.ui) then return t end
     end
     return LIBRARY_TARGETS[1] -- plain KOReader file browser always works
@@ -271,6 +279,22 @@ function KindleToolbar:getMoreActions()
         end
         self:saveSettings()
     end
+    if not self.settings.added_open_with_entry then
+        -- v1.2.0: "Open Toolbar With…" in the ⋮ menu (once; removable), before Toolbar Settings
+        self.settings.added_open_with_entry = true
+        local actions = self.settings.more_actions
+        if not actions.kindle_toolbar_open_with then
+            actions.kindle_toolbar_open_with = true
+            if type(cfg.order) == "table" then
+                local pos
+                for i, id in ipairs(cfg.order) do
+                    if id == "kindle_toolbar_settings" then pos = i break end
+                end
+                table.insert(cfg.order, pos or (#cfg.order + 1), "kindle_toolbar_open_with")
+            end
+        end
+        self:saveSettings()
+    end
     if self.updated then -- changed through the Dispatcher menu
         self.updated = nil
         self:saveSettings()
@@ -290,6 +314,12 @@ function KindleToolbar:saveSettings()
 end
 
 function KindleToolbar:onDispatcherRegisterActions()
+    Dispatcher:registerAction("kindle_toolbar_open_with", {
+        category = "none",
+        event = "ShowKindleToolbarOpenWith",
+        title = _("Kindle-style toolbar: choose where it opens"),
+        reader = true,
+    })
     Dispatcher:registerAction("kindle_toolbar_settings", {
         category = "none",
         event = "ShowKindleToolbarSettings",
@@ -371,7 +401,7 @@ function KindleToolbar:fixZoneOrder()
     local changed = false
     for our_id, before in pairs(OUR_ZONES) do
         if dg:checkNode(our_id) then
-            for _, id in ipairs(before) do
+            for _i, id in ipairs(before) do
                 if dg:checkNode(id) then
                     dg:addNodeDep(our_id, id)
                     changed = true
@@ -381,7 +411,7 @@ function KindleToolbar:fixZoneOrder()
     end
     if changed then
         local ordered = {}
-        for _, zone_id in ipairs(dg:serialize()) do
+        for _i, zone_id in ipairs(dg:serialize()) do
             if ui._zones[zone_id] then
                 table.insert(ordered, ui._zones[zone_id])
             end
@@ -548,7 +578,7 @@ function KindleToolbar:addToMainMenu(menu_items)
         book_pages = _("Pages left in book"),
     }
     local zone_items = {}
-    for _, key in ipairs{ "small", "medium", "large" } do
+    for _i, key in ipairs{ "small", "medium", "large" } do
         table.insert(zone_items, {
             text = zone_names[key],
             radio = true,
@@ -561,7 +591,7 @@ function KindleToolbar:addToMainMenu(menu_items)
         })
     end
     local mode_items = {}
-    for _, key in ipairs{ "chapter_time", "book_time", "chapter_pages", "book_pages" } do
+    for _i, key in ipairs{ "chapter_time", "book_time", "chapter_pages", "book_pages" } do
         table.insert(mode_items, {
             text = mode_names[key],
             radio = true,
@@ -584,7 +614,28 @@ end
 function KindleToolbar:buildSettingsItems(zone_names, zone_items, mode_names, mode_items)
     return {
             {
-                text = _("Show toolbar when tapping the middle of the page"),
+                text_func = function()
+                    local m = self:getOpenMode()
+                    return _("Open the toolbar from") .. ": " .. (m and OPEN_MODE_NAMES[m] or _("custom"))
+                end,
+                help_text = _("Also in the toolbar's ⋮ menu: Open Toolbar With…"),
+                sub_item_table_func = function()
+                    local sub = {}
+                    for _i, mode in ipairs(OPEN_MODES) do
+                        local m = mode
+                        table.insert(sub, {
+                            text = OPEN_MODE_NAMES[m],
+                            radio = true,
+                            checked_func = function() return self:getOpenMode() == m end,
+                            callback = function() self:setOpenMode(m) end,
+                        })
+                    end
+                    return sub
+                end,
+                separator = true,
+            },
+            {
+                text = _("Tapping the middle of the page opens the toolbar"),
                 checked_func = function() return self.settings.enabled end,
                 callback = function()
                     self.settings.enabled = not self.settings.enabled
@@ -625,11 +676,11 @@ function KindleToolbar:buildSettingsItems(zone_names, zone_items, mode_names, mo
             },
             {
                 text_func = function()
-                    return _("‹ Library button opens") .. ": " .. self:getLibraryTarget().menu
+                    return _("Library button opens") .. ": " .. self:getLibraryTarget().menu
                 end,
                 sub_item_table_func = function()
                     local sub = {}
-                    for _, t in ipairs(LIBRARY_TARGETS) do
+                    for _i, t in ipairs(LIBRARY_TARGETS) do
                         local target = t
                         table.insert(sub, {
                             text = target.menu,
@@ -709,6 +760,62 @@ function KindleToolbar:buildSettingsItems(zone_names, zone_items, mode_names, mo
 end
 
 --- Open just this plugin's settings, as a one-tab KOReader menu.
+-- ------------------------------------------------------------ open mode
+
+--- "middle_top", "top", or nil for a custom mix (set with the finer switches).
+function KindleToolbar:getOpenMode()
+    local top = self.settings.top_tap or self.settings.top_swipe
+    if self.settings.enabled and top then return "middle_top" end
+    if not self.settings.enabled and top then return "top" end
+end
+
+function KindleToolbar:setOpenMode(mode)
+    if mode == "middle_top" then
+        self.settings.enabled = true
+    elseif mode == "top" then
+        self.settings.enabled = false
+    else
+        return
+    end
+    self.settings.top_tap = true
+    self.settings.top_swipe = true
+    self:saveSettings()
+end
+
+--- A small KindleOS-style dropdown to pick where the toolbar opens from.
+--- `right`/`top` place it (defaults: under the top-right corner).
+function KindleToolbar:showOpenWithMenu(right, top)
+    local ToolbarWidget = require("kindletoolbar_widget")
+    local dropdown
+    local items = {}
+    local current = self:getOpenMode()
+    for _i, mode in ipairs(OPEN_MODES) do
+        local m = mode
+        table.insert(items, {
+            text = OPEN_MODE_NAMES[m],
+            checked = current == m,
+            callback = function()
+                UIManager:close(dropdown)
+                self:setOpenMode(m)
+                local Notification = require("ui/widget/notification")
+                Notification:notify(_("Toolbar opens from: ") .. OPEN_MODE_NAMES[m])
+            end,
+        })
+    end
+    local Screen = Device.screen
+    dropdown = ToolbarWidget.KindleDropdown:new{
+        items = items,
+        right = right or (Screen:getWidth() - Screen:scaleBySize(10)),
+        top = top or Screen:scaleBySize(90),
+    }
+    UIManager:show(dropdown)
+end
+
+function KindleToolbar:onShowKindleToolbarOpenWith()
+    self:showOpenWithMenu()
+    return true
+end
+
 function KindleToolbar:onShowKindleToolbarSettings()
     local items = {}
     self:addToMainMenu(items)

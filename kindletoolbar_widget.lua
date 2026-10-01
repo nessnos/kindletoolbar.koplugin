@@ -45,6 +45,8 @@ local GRAY = Blitbuffer.COLOR_DARK_GRAY
 local LIGHT = Blitbuffer.COLOR_LIGHT_GRAY
 
 local function S(v) return Screen:scaleBySize(v) end
+-- extra space above the back arrow (its centre moves down by half of this)
+local ARROW_NUDGE = math.floor(Screen:scaleBySize(1) + 0.5)
 
 -- ---------------------------------------------------------------------------
 -- Small drawing widgets
@@ -97,6 +99,33 @@ function Chevron:paintTo(bb, x, y)
     -- round caps
     bb:paintRoundedRect(x, y, t, t, BLACK, r)
     bb:paintRoundedRect(x + w - t, y, t, t, BLACK, r)
+end
+
+-- A thin "←" arrow, like the back arrow next to "Library" on KindleOS.
+local BackArrow = Widget:extend{
+    width = nil,
+    height = nil,
+    thickness = nil,
+}
+
+function BackArrow:getSize()
+    return Geom:new{ w = self.width, h = self.height }
+end
+
+function BackArrow:paintTo(bb, x, y)
+    self.dimen = Geom:new{ x = x, y = y, w = self.width, h = self.height }
+    local t = self.thickness
+    local mid = y + math.floor(self.height / 2)
+    -- shaft
+    bb:paintRect(x + 1, mid - math.floor(t / 2), self.width - 1, t, BLACK)
+    -- head: two 45° strokes meeting at the tip
+    local half = math.floor(self.height / 2)
+    -- a staircase of t×t squares gives a 45° stroke about as thick as the shaft
+    local d = t
+    for i = 0, half - math.floor(d / 2) do
+        bb:paintRect(x + i, mid - i - math.floor(d / 2), d, d, BLACK)
+        bb:paintRect(x + i, mid + i - math.floor(d / 2), d, d, BLACK)
+    end
 end
 
 -- Three vertical dots (overflow menu).
@@ -255,7 +284,7 @@ function Slider:paintTo(bb, x, y)
     if self.ticks then
         local tick_h = S(10)
         local tick_w = math.max(1, Size.line.medium)
-        for _, pct in ipairs(self.ticks) do
+        for _i, pct in ipairs(self.ticks) do
             bb:paintRect(x + self._xFor(self, pct), cy - math.floor(tick_h / 2), tick_w, tick_h, GRAY)
         end
     end
@@ -326,14 +355,28 @@ function DropdownItem:init()
         fgcolor = self.enabled and BLACK or GRAY,
         max_width = self.width - 2 * self.pad_left,
     }
+    local row_dimen = Geom:new{ w = self.width - self.pad_left, h = self.height }
+    local content = LeftContainer:new{ dimen = row_dimen:copy(), self.label }
+    if self.checked then
+        -- a check mark on the right for the current choice
+        content = OverlapGroup:new{
+            dimen = row_dimen:copy(),
+            allow_mirroring = false,
+            content,
+            RightContainer:new{
+                dimen = row_dimen:copy(),
+                HorizontalGroup:new{
+                    TextWidget:new{ text = "\u{2713}", face = self.face },
+                    HorizontalSpan:new{ width = self.pad_left },
+                },
+            },
+        }
+    end
     self[1] = FrameContainer:new{
         bordersize = 0, margin = 0,
         padding = 0, padding_left = self.pad_left,
         background = WHITE,
-        LeftContainer:new{
-            dimen = Geom:new{ w = self.width - self.pad_left, h = self.height },
-            self.label,
-        },
+        content,
     }
     self.ges_events = {
         TapItem = { GestureRange:new{ ges = "tap", range = function() return self.dimen end } },
@@ -372,12 +415,16 @@ function KindleDropdown:init()
 
     -- width: widest label + padding, within sensible bounds
     local widest = 0
-    for _, it in ipairs(self.items) do
+    for _i, it in ipairs(self.items) do
         local tw = TextWidget:new{ text = it.text, face = face }
         widest = math.max(widest, tw:getSize().w)
         tw:free()
     end
-    local width = math.max(math.floor(sw * 0.42), widest + 2 * pad_left + S(24))
+    local has_check = false
+    for _i, it in ipairs(self.items) do
+        if it.checked ~= nil then has_check = true end
+    end
+    local width = math.max(math.floor(sw * 0.42), widest + 2 * pad_left + S(24) + (has_check and S(40) or 0))
     width = math.min(width, sw - 2 * S(10))
 
     local vg = VerticalGroup:new{ align = "left" }
@@ -386,6 +433,7 @@ function KindleDropdown:init()
         table.insert(vg, DropdownItem:new{
             text = it.text, width = width - 2 * border, height = row_h,
             enabled = it.enabled ~= false, face = face, pad_left = pad_left,
+            checked = it.checked,
             show_parent = self,
             callback = it.callback,
         })
@@ -474,7 +522,7 @@ function KindleToolbarWidget:init()
 
     local full = Geom:new{ x = 0, y = 0, w = self.screen_w, h = self.screen_h }
     self.ges_events = {}
-    for _, g in ipairs{ "tap", "touch", "pan", "hold", "hold_pan", "pan_release", "hold_release", "swipe", "double_tap" } do
+    for _i, g in ipairs{ "tap", "touch", "pan", "hold", "hold_pan", "pan_release", "hold_release", "swipe", "double_tap" } do
         self.ges_events["Hud_" .. g] = { GestureRange:new{ ges = g, range = full }, event = "HudGesture" }
     end
     if Device:hasKeys() then
@@ -518,11 +566,11 @@ function KindleToolbarWidget:buildTop()
     local inner_w = self.inner_w
 
     -- Status row: clock | chevron | wifi battery%
-    local status_h = S(34)
-    -- Matches KindleUI's top bar: 18pt text, the Nerd Font Wi-Fi glyph at the same size
-    -- (it comes from KOReader's built-in symbol fallback font, so no other plugin is
-    -- needed), two spaces between items and one between "82%" and the battery.
-    local status_face = Font:getFace("cfont", 18)
+    local status_h = S(28)
+    -- Small text like KindleOS' status bar. The Nerd Font Wi-Fi glyph uses the same
+    -- face (it comes from KOReader's built-in symbol fallback font, so no other plugin
+    -- is needed); two spaces between items and one between "82%" and the battery.
+    local status_face = Font:getFace("cfont", 14)
     local icon_face = status_face
     local clock = datetime.secondsToHour(os.time(), G_reader_settings:isTrue("twelve_hour_clock"))
     local right = HorizontalGroup:new{ align = "center" }
@@ -567,15 +615,23 @@ function KindleToolbarWidget:buildTop()
     local icon = S(30)
     local ipad = S(9)
     local target = self.plugin:getLibraryTarget()
+    local library_face = Font:getFace("cfont", 20)
+    -- the arrow's stroke matches the letters' stems (about 8% of the font size)
+    local arrow_t = math.max(2, math.floor(library_face.size * 0.08))
     local library = Tappable:new{
         callback = function()
             self:closeAnd(function() self.plugin:goToLibraryTarget(target.id) end)
         end,
         HorizontalGroup:new{
             align = "center",
-            IconWidget:new{ icon = "chevron.left", width = S(24), height = S(24) },
-            HorizontalSpan:new{ width = S(6) },
-            TextWidget:new{ text = target.label, face = Font:getFace("cfont", 20) },
+            -- nudge the arrow down a little so it sits on the middle of the capital
+            -- letters (the text box is centred on its line height, not on the letters)
+            VerticalGroup:new{
+                VerticalSpan:new{ width = ARROW_NUDGE },
+                BackArrow:new{ width = S(19), height = S(14), thickness = arrow_t },
+            },
+            HorizontalSpan:new{ width = S(10) },
+            TextWidget:new{ text = target.label, face = library_face },
         },
     }
     local function iconButton(name, cb)
@@ -750,7 +806,7 @@ function KindleToolbarWidget:buildBottom()
     local ticks
     if self.plugin.settings.show_ticks ~= false then
         ticks = {}
-        for _, p in ipairs(self.ui.toc:getTocTicksFlattened() or {}) do
+        for _i, p in ipairs(self.ui.toc:getTocTicksFlattened() or {}) do
             table.insert(ticks, self:pctForPage(p))
         end
     end
@@ -812,7 +868,7 @@ function PageCards:paintTo(bb, x, y)
     local o = self.owner
     bb:paintRect(x, y, self.width, self.height, WHITE)
     local bw = Size.border.thin
-    for _, card in ipairs(o:cardLayout()) do
+    for _i, card in ipairs(o:cardLayout()) do
         local cx, cy, cw, ch = card.x, card.y, card.w, card.h
         -- clip the white card background to the screen
         local rx = math.max(0, cx)
@@ -949,7 +1005,7 @@ end
 function KindleToolbarWidget:ensureImages()
     if not self.zoom or self.closed then return end
     local wanted = {}
-    for _, card in ipairs(self:cardLayout()) do
+    for _i, card in ipairs(self:cardLayout()) do
         wanted[card.page] = true
         -- (the current page's picture comes from the screen, see onReaderPainted)
         if not self.images[card.page] and card.page ~= self:currentPage() then
@@ -1102,6 +1158,7 @@ local ACTION_LABELS = {
     book_statistics = _("Reading Statistics"),
     show_menu = _("KOReader Menu"),
     kindle_toolbar_settings = _("Toolbar Settings"),
+    kindle_toolbar_open_with = _("Open Toolbar With…"),
 }
 
 function KindleToolbarWidget:makeDots(ipad, icon)
@@ -1146,6 +1203,11 @@ function KindleToolbarWidget:showMoreMenu()
                     separator = separators[k] and true or nil,
                     callback = function()
                         UIManager:close(dropdown)
+                        if key == "kindle_toolbar_open_with" then
+                            -- keep the toolbar up and swap in the choice menu at the same spot
+                            self.plugin:showOpenWithMenu(self._dropdown_right, self._dropdown_top)
+                            return
+                        end
                         self:closeAnd(function()
                             Dispatcher:execute({ [key] = value })
                         end)
@@ -1167,6 +1229,7 @@ function KindleToolbarWidget:showMoreMenu()
     local d = self.dots and self.dots.dimen
     local right = d and (d.x + d.w + S(6)) or (self.screen_w - S(10))
     local top = d and (d.y + d.h - S(4)) or S(90)
+    self._dropdown_right, self._dropdown_top = right, top
     dropdown = KindleDropdown:new{ items = items, right = right, top = top }
     UIManager:show(dropdown)
 end
@@ -1244,7 +1307,7 @@ end
 --- Which card (if any) is under `pos`: -1 previous, 0 current, 1 next.
 function KindleToolbarWidget:cardAt(pos)
     if not self.zoom or not self.card_w then return nil end
-    for _, card in ipairs(self:cardLayout()) do
+    for _i, card in ipairs(self:cardLayout()) do
         if inside(pos, Geom:new{ x = card.x, y = card.y, w = card.w, h = card.h }) then
             return card.page - self:centerPage()
         end
@@ -1312,5 +1375,6 @@ function KindleToolbarWidget:cycleInfoMode()
 end
 
 KindleToolbarWidget.INFO_MODES = INFO_MODES
+KindleToolbarWidget.KindleDropdown = KindleDropdown
 
 return KindleToolbarWidget
