@@ -88,17 +88,44 @@ end
 
 -- Where the "‹ Library" button can take you. `available` decides whether the
 -- choice can be used right now (other plugins may not be installed).
+-- A home-screen plugin that offers Library / Home / Authors / Series (SimpleUI,
+-- or plugins built on it such as KindleUI). Found by what it can do, not its name.
+local function homePlugin(ui)
+    for _, key in ipairs{ "simpleui", "kindleui", "KindleUI" } do
+        local p = ui[key]
+        if type(p) == "table" and p.onSimpleUIGoLibrary then return p end
+    end
+end
+
+-- Authors / Series need that plugin's "browse by metadata" feature, switched on.
+local function browseAvailable(ui)
+    if not homePlugin(ui) then return false end
+    local ok, BM = pcall(require, "features/library/sui_library_browse")
+    if not ok or type(BM) ~= "table" or type(BM.navigateTo) ~= "function" then return false end
+    if type(BM.isEnabled) == "function" then
+        local ok2, on = pcall(BM.isEnabled)
+        return ok2 and on and true or false
+    end
+    return true
+end
+
+-- Where the "‹ Library" button can take you. `available` decides whether the
+-- choice can be used right now; unavailable ones are greyed out in the menu.
+-- (The ids keep their old names so existing settings carry over.)
 local LIBRARY_TARGETS = {
-    { id = "filebrowser", label = _("Library"), menu = _("File browser (KOReader)"),
+    { id = "filebrowser", label = _("Library"), menu = _("File browser"),
       available = function() return true end },
-    { id = "simpleui_library", label = _("Library"), menu = _("Library (SimpleUI)"),
-      available = function(ui) return ui.simpleui ~= nil end },
-    { id = "simpleui_home", label = _("Home"), menu = _("Home screen (SimpleUI)"),
-      available = function(ui) return ui.simpleui ~= nil end },
-    { id = "simpleui_authors", label = _("Authors"), menu = _("Authors (SimpleUI)"),
-      available = function(ui) return ui.simpleui ~= nil end },
-    { id = "simpleui_series", label = _("Series"), menu = _("Series (SimpleUI)"),
-      available = function(ui) return ui.simpleui ~= nil end },
+    { id = "simpleui_library", label = _("Library"), menu = _("Library"),
+      available = function(ui) return homePlugin(ui) ~= nil end },
+    { id = "simpleui_home", label = _("Home"), menu = _("Home screen"),
+      available = function(ui)
+          local hp = homePlugin(ui)
+          return hp ~= nil and hp.onSimpleUIGoHomescreen ~= nil
+      end },
+    { id = "simpleui_authors", label = _("Authors"), menu = _("Authors"),
+      available = browseAvailable },
+    { id = "simpleui_series", label = _("Series"), menu = _("Series"),
+      available = browseAvailable },
     { id = "bookshelf", label = _("Bookshelf"), menu = _("Bookshelf"),
       available = function(ui) return ui.bookshelf ~= nil end },
 }
@@ -164,20 +191,21 @@ end
 function KindleToolbar:goToLibraryTarget(id)
     local ui = self.ui
     local ok, err = pcall(function()
-        if id == "simpleui_library" and ui.simpleui and ui.simpleui.onSimpleUIGoLibrary then
-            ui.simpleui:onSimpleUIGoLibrary()
-        elseif id == "simpleui_home" and ui.simpleui and ui.simpleui.onSimpleUIGoHomescreen then
-            ui.simpleui:onSimpleUIGoHomescreen()
-        elseif (id == "simpleui_authors" or id == "simpleui_series") and ui.simpleui and ui.simpleui.onSimpleUIGoLibrary then
+        local hp = homePlugin(ui)
+        if id == "simpleui_library" and hp then
+            hp:onSimpleUIGoLibrary()
+        elseif id == "simpleui_home" and hp and hp.onSimpleUIGoHomescreen then
+            hp:onSimpleUIGoHomescreen()
+        elseif (id == "simpleui_authors" or id == "simpleui_series") and hp then
             local action = id == "simpleui_authors" and "browse_authors" or "browse_series"
-            ui.simpleui:onSimpleUIGoLibrary()
+            hp:onSimpleUIGoLibrary()
             -- Once the library is up, ask SimpleUI to switch to its Authors/Series view
             -- (same as tapping that tab on its bottom bar).
             local tries = 0
             local function go()
                 tries = tries + 1
                 local fm = liveFileManager()
-                local sui = fm and (fm._simpleui_plugin or fm.simpleui)
+                local sui = fm and (fm._simpleui_plugin or fm.simpleui or fm.kindleui or fm.KindleUI)
                 if fm and fm.file_chooser and sui and sui._navigate then
                     local ok2, err2 = pcall(sui._navigate, sui, action, fm, nil, false)
                     if not ok2 then logger.warn("kindletoolbar: SimpleUI navigate failed:", err2) end
@@ -616,7 +644,7 @@ function KindleToolbar:buildSettingsItems(zone_names, zone_items, mode_names, mo
                     end
                     return sub
                 end,
-                help_text = _("Choices from SimpleUI or Bookshelf are only available when those plugins are installed and enabled. If a choice isn't available, the button opens KOReader's file browser. Authors and Series need SimpleUI's 'Browse by Author / Series / Tags' to be on."),
+                help_text = _("Greyed-out choices need a plugin that isn't installed or enabled on this device: Library and Home screen need a home-screen plugin (such as KindleUI or SimpleUI), Authors and Series also need its 'Browse by Author / Series / Tags' option, and Bookshelf needs the Bookshelf plugin. If the chosen place isn't available, the button opens the file browser."),
             },
             {
                 text = _("Show the page zoomed out, with the pages around it"),

@@ -30,7 +30,7 @@ KOReader
   repository; the plugin only uses KOReader's public Lua modules at run time.
 
 Nerd Fonts Symbols
-  The toolbar draws its Wi-Fi and battery icons with glyphs from the Nerd Fonts
+  The toolbar draws its Wi-Fi icon with glyphs from the Nerd Fonts
   symbols font that ships with KOReader (https://www.nerdfonts.com, MIT / OFL).
   Only code points are referenced; no font files are included.
 

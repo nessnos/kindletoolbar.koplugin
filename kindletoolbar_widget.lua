@@ -161,6 +161,55 @@ function SkipIcon:paintTo(bb, x, y)
     end
 end
 
+-- Horizontal battery, as KindleOS draws it (the same drawing as KindleUI's
+-- kui_battery): an outlined body with a small cap on the right, filled in
+-- proportion to the charge; while charging, a small bolt is cut out of the middle.
+local Battery = Widget:extend{
+    level = 100,
+    charging = false,
+    height = nil,
+}
+
+function Battery:init()
+    self.height = self.height or S(14)
+    self.width = math.floor(self.height * 2.1)
+end
+
+function Battery:getSize()
+    return Geom:new{ w = self.width, h = self.height }
+end
+
+function Battery:paintTo(bb, x, y)
+    self.dimen = Geom:new{ x = x, y = y, w = self.width, h = self.height }
+    local fg = BLACK
+    local h = self.height
+    local b = math.max(1, math.floor(h / 8))           -- outline thickness
+    local cap_w = math.max(2, math.floor(h / 6))
+    local body_w = self.width - cap_w
+    local r = math.max(1, math.floor(h / 6))
+    bb:paintBorder(x, y, body_w, h, b, fg, r)
+    local cap_h = math.floor(h / 2)
+    bb:paintRect(x + body_w, y + math.floor((h - cap_h) / 2), cap_w, cap_h, fg)
+    local gap = b + math.max(1, math.floor(h / 10))
+    local inner_w = body_w - gap * 2
+    local lvl = math.max(0, math.min(100, tonumber(self.level) or 0))
+    local fill = math.floor(inner_w * lvl / 100 + 0.5)
+    if fill > 0 then
+        bb:paintRect(x + gap, y + gap, fill, h - gap * 2, fg)
+    end
+    if self.charging then
+        local cx = x + math.floor(body_w / 2)
+        local top, bot = y + gap, y + h - gap
+        local mid = math.floor((top + bot) / 2)
+        local col = fill > inner_w / 2 and WHITE or fg
+        for yy = top, bot - 1 do
+            local off
+            if yy < mid then off = math.floor((mid - yy) / 2) else off = -math.floor((yy - mid) / 2) end
+            bb:paintRect(cx + off - 1, yy, math.max(2, math.floor(h / 7)), 1, col)
+        end
+    end
+end
+
 -- The Kindle-looking slider: thin track, thick filled part, round knob,
 -- plus an optional marker for the page you started from.
 local Slider = Widget:extend{
@@ -470,9 +519,11 @@ function KindleToolbarWidget:buildTop()
 
     -- Status row: clock | chevron | wifi battery%
     local status_h = S(34)
-    local status_face = Font:getFace("cfont", 15)
-    -- Same glyphs as KOReader's status bar and SimpleUI's top bar (Nerd Font symbols)
-    local icon_face = Font:getFace("nerdfonts/symbols.ttf", 17)
+    -- Matches KindleUI's top bar: 18pt text, the Nerd Font Wi-Fi glyph at the same size
+    -- (it comes from KOReader's built-in symbol fallback font, so no other plugin is
+    -- needed), two spaces between items and one between "82%" and the battery.
+    local status_face = Font:getFace("cfont", 18)
+    local icon_face = status_face
     local clock = datetime.secondsToHour(os.time(), G_reader_settings:isTrue("twelve_hour_clock"))
     local right = HorizontalGroup:new{ align = "center" }
     if Device:hasWifiToggle() then
@@ -481,7 +532,7 @@ function KindleToolbarWidget:buildTop()
         on = ok and on
         if on or not self.plugin.settings.hide_wifi_off then
             table.insert(right, TextWidget:new{ text = on and "\u{ECA8}" or "\u{ECA9}", face = icon_face })
-            table.insert(right, HorizontalSpan:new{ width = S(12) })
+            table.insert(right, TextWidget:new{ text = "  ", face = status_face })
         end
     end
     if Device:hasBattery() then
@@ -489,12 +540,17 @@ function KindleToolbarWidget:buildTop()
             local powerd = Device:getPowerDevice()
             local lvl = powerd:getCapacity()
             if type(lvl) ~= "number" then return end
-            local sym = powerd:getBatterySymbol(powerd:isCharged(), powerd:isCharging(), lvl) or ""
-            table.insert(right, TextWidget:new{ text = sym, face = icon_face })
-            table.insert(right, TextWidget:new{ text = lvl .. "%", face = status_face })
+            -- KindleOS-style: "82% ▭" with a horizontal battery (same drawing as KindleUI)
+            local pct = TextWidget:new{ text = lvl .. "%", face = status_face }
+            local bh = math.floor(pct:getSize().h * 0.52)
+            table.insert(right, pct)
+            table.insert(right, TextWidget:new{ text = " ", face = status_face })
+            table.insert(right, Battery:new{ level = lvl, charging = powerd:isCharging() and true or false, height = bh })
         end)
     end
-    local status_dimen = Geom:new{ w = inner_w, h = status_h }
+    -- a little more side margin than the rows below, like KindleUI's top bar
+    local status_extra = S(8)
+    local status_dimen = Geom:new{ w = inner_w - 2 * status_extra, h = status_h }
     local status_row = Tappable:new{
         callback = function() self:openMainMenu() end,
         OverlapGroup:new{
@@ -570,7 +626,7 @@ function KindleToolbarWidget:buildTop()
         background = WHITE,
         VerticalGroup:new{
             align = "left",
-            HorizontalGroup:new{ pad_span, status_row },
+            HorizontalGroup:new{ pad_span, HorizontalSpan:new{ width = S(8) }, status_row },
             HorizontalGroup:new{ pad_span, toolbar_row },
             LineWidget:new{ background = LIGHT, dimen = Geom:new{ w = self.screen_w, h = Size.line.medium } },
             HorizontalGroup:new{ pad_span, title_row },

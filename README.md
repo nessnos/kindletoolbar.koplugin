@@ -17,7 +17,7 @@ A reading toolbar for [KOReader](https://github.com/koreader/koreader) that look
 - Links, highlights and corner gestures you've set up keep working as before.
 
 **Top bar**
-- Clock, a pull-down chevron, Wi-Fi and battery. Tap this row to open KOReader's own menu.
+- Clock, a pull-down chevron, Wi-Fi, and the battery level with a KindleOS-style horizontal battery. Tap this row to open KOReader's own menu.
 - **‹ Library**, **Aa** (fonts and layout), **table of contents**, **notebook** (bookmarks, highlights and notes), **search** and **⋮**.
 - The book's title.
 
@@ -43,7 +43,7 @@ A reading toolbar for [KOReader](https://github.com/koreader/koreader) that look
 
 **Where "‹ Library" takes you**
 - KOReader's file browser (the default).
-- Or, if [SimpleUI](https://github.com/doctorhetfield-cmd/simpleui.koplugin) is installed: its Library, Home screen, Authors view or Series view.
+- Or **Library**, **Home screen**, **Authors** or **Series**, when you use a home-screen plugin that offers them, such as KindleUI or [SimpleUI](https://github.com/doctorhetfield-cmd/simpleui.koplugin).
 - Or, if [Bookshelf](https://github.com/AndyHazz/bookshelf.koplugin) is installed: Bookshelf.
 - Choices for plugins you don't have are greyed out, and the button always falls back to the file browser.
 
@@ -78,7 +78,7 @@ Open a book, then go to KOReader's menu → **Settings (⚙)** → **Kindle-styl
 | Tapping the top of the page opens the toolbar | On by default. Turn it off to get KOReader's menu back there. |
 | Swiping down from the top opens the toolbar | On by default. Turn it off to get KOReader's menu back there. |
 | Bottom line shows | Time or pages left, in the chapter or the book. You can also tap the line on the toolbar. |
-| ‹ Library button opens | File browser, SimpleUI Library / Home / Authors / Series, or Bookshelf. |
+| ‹ Library button opens | File browser, Library, Home screen, Authors, Series or Bookshelf. Choices your device can't use are greyed out. |
 | Show the page zoomed out, with the pages around it | Off gives a lighter toolbar that sits over the page as it is. |
 | ⋮ menu | Pick the actions, **Arrange actions** to reorder them and tick items to add a dividing line after them, or **Reset to default**. |
 | Hide the Wi-Fi icon when Wi-Fi is off | |
@@ -100,8 +100,8 @@ They're drawn in the background by KOReader's page thumbnailer, so the first tim
 **Page browser and book map thumbnails no longer show my Bookends overlays.**
 The toolbar switches overlays off while KOReader draws page thumbnails, so its cards only show the book. Those thumbnails are shared with the page browser and book map.
 
-**The Authors or Series choice does nothing.**
-Turn on SimpleUI's "Browse by Author / Series / Tags" in its library menu.
+**Authors or Series is greyed out.**
+They need a home-screen plugin such as KindleUI or SimpleUI, with its "Browse by Author / Series / Tags" option switched on in the library menu. Until then they're greyed out.
 
 ## Compatibility
 
@@ -126,7 +126,7 @@ Bug reports and pull requests are welcome. Please mention your device, your KORe
 
 - Inspired by the reading toolbar of Amazon's KindleOS.
 - Built for [KOReader](https://github.com/koreader/koreader).
-- The Wi-Fi and battery icons match [SimpleUI](https://github.com/doctorhetfield-cmd/simpleui.koplugin)'s top bar (Nerd Fonts symbols that ship with KOReader).
+- The status row (clock, Wi-Fi, battery) is drawn the same way as KindleUI's top bar: the Wi-Fi icon from the Nerd Fonts symbols that ship with KOReader, and KindleUI's horizontal battery. It doesn't need KindleUI or [SimpleUI](https://github.com/doctorhetfield-cmd/simpleui.koplugin) to be installed.
 
 ## License
 
