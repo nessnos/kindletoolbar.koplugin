@@ -26,6 +26,8 @@ local TOP_SWIPE_ID = "kindletoolbar_top_swipe"
 local TOP_EXT_SWIPE_ID = "kindletoolbar_top_ext_swipe"
 local TOP_PAN_ID = "kindletoolbar_top_pan"
 local TOP_EXT_PAN_ID = "kindletoolbar_top_ext_pan"
+local SWIPE_UP_ID = "kindletoolbar_swipe_up"
+local SWIPE_UP_PAN_ID = "kindletoolbar_swipe_up_pan"
 
 -- Zones that must keep priority over ours (tapping a link or an existing highlight
 -- should still do what it always did; so should corner taps you've set up in
@@ -51,6 +53,18 @@ local OUR_ZONES = {
     [TOP_EXT_SWIPE_ID] = {},
     [TOP_PAN_ID] = {},
     [TOP_EXT_PAN_ID] = {},
+    -- the Gestures plugin's edge swipes (frontlight/warmth…) keep priority
+    [SWIPE_UP_ID] = {
+        "one_finger_swipe_left_edge_up",
+        "one_finger_swipe_left_edge_down",
+        "one_finger_swipe_right_edge_up",
+        "one_finger_swipe_right_edge_down",
+        "short_diagonal_swipe",
+    },
+    [SWIPE_UP_PAN_ID] = {
+        "one_finger_swipe_left_edge_up_pan",
+        "one_finger_swipe_right_edge_up_pan",
+    },
 }
 
 -- Tap area presets (screen ratios). They avoid the top/bottom 1/5 of the screen,
@@ -68,8 +82,10 @@ local DEFAULTS = {
     info_mode = "chapter_time",
     zoom_pages = true,
     hide_wifi_off = false,
+    mirror_home_statusbar = true, -- use the home screen's status bar (KindleUI/SimpleUI) when there is one
     top_tap = true,     -- tapping the top of the page opens the toolbar (not KOReader's menu)
-    top_swipe = true,   -- same for swiping down from the top
+    top_swipe = false,  -- swiping down from the top: off, like KindleOS (KOReader's menu opens)
+    swipe_up = true,    -- swiping up in the middle of the page opens the toolbar, like KindleOS
 }
 
 -- What the ⋮ menu offers out of the box (Dispatcher action ids, in order).
@@ -152,6 +168,15 @@ function KindleToolbar:init()
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
 
+    if not self.settings.kindleos_gestures_migrated then
+        -- v1.3.0: match KindleOS. Swiping down from the top goes back to KOReader's
+        -- menu, and swiping up in the middle opens the toolbar.
+        self.settings.kindleos_gestures_migrated = true
+        self.settings.top_swipe = false
+        self.settings.swipe_up = true
+        self:saveSettings()
+    end
+
     if self.settings.more_actions == nil then
         self.settings.more_actions = defaultMoreActions()
     end
@@ -162,6 +187,7 @@ function KindleToolbar:init()
     end
     self:hookReaderPaint()
     self:hookThumbnails()
+    self:hookPageAnimation()
 end
 
 -- Side-page thumbnails come from KOReader's page thumbnailer, which draws the page
@@ -182,6 +208,11 @@ function KindleToolbar:hookThumbnails()
 end
 
 -- ------------------------------------------------------------ Library button
+
+--- The SimpleUI-based home-screen plugin (KindleUI, SimpleUI…) when one is loaded.
+function KindleToolbar:getHomePlugin()
+    return homePlugin(self.ui)
+end
 
 function KindleToolbar:getLibraryTarget()
     local wanted = self.settings.library_target or "filebrowser"
@@ -237,6 +268,28 @@ end
 -- When the toolbar is up, the reader still repaints itself underneath it (e.g. after
 -- a jump). That's the moment its page is on the screen buffer without our overlay:
 -- let the toolbar grab it for the zoomed-out page card.
+-- KOReader's "Page turn animations" (Settings → Taps and gestures → Page turns) slide
+-- the whole screen when the page changes. With the toolbar up, the page turns behind
+-- it (side cards, slider, chapter buttons), so skip the animation then; normal reading
+-- keeps it.
+function KindleToolbar:hookPageAnimation()
+    local view = self.ui.view
+    if not view or view._kindletoolbar_anim_hooked then return end
+    view._kindletoolbar_anim_hooked = true
+    local plugin = self
+    local orig = view.onPageChangeAnimation
+    if type(orig) ~= "function" then return end
+    view.onPageChangeAnimation = function(this, forward)
+        if plugin.hud then
+            -- also cancel one that may already be queued for the next refresh
+            local Screen = Device.screen
+            if Screen.setSwipeAnimations then pcall(Screen.setSwipeAnimations, Screen, false) end
+            return true
+        end
+        return orig(this, forward)
+    end
+end
+
 function KindleToolbar:hookReaderPaint()
     local ui = self.ui
     if ui._kindletoolbar_paint_hooked then return end
@@ -371,8 +424,17 @@ function KindleToolbar:registerTopZones()
     end
     local function onSwipe(ges)
         if not self.settings.top_swipe or ges.direction ~= "south" then return false end
-        self:showToolbar()
+        self:showToolbar(ges.ges == "pan")
         self.ui:handleEvent(Event:new("HandledAsSwipe")) -- cancel any pan scroll made
+        return true
+    end
+    local function swipeUp(ges)
+        if not self.settings.swipe_up or ges.direction ~= "north" then return false end
+        local view = self.ui.view
+        -- in continuous (scroll) mode a swipe up scrolls the text: leave it alone
+        if view and (view.view_mode == "scroll" or view.page_scroll) then return false end
+        self:showToolbar(ges.ges == "pan")
+        self.ui:handleEvent(Event:new("HandledAsSwipe"))
         return true
     end
     self.ui:registerTouchZones({
@@ -386,6 +448,18 @@ function KindleToolbar:registerTopZones()
           overrides = { "readermenu_ext_swipe", "readermenu_swipe", TOP_SWIPE_ID, "rolling_swipe", "paging_swipe" }, handler = onSwipe },
         { id = TOP_PAN_ID, ges = "pan", screen_zone = sz(menu_zone),
           overrides = { "readermenu_pan", "rolling_pan", "paging_pan" }, handler = onSwipe },
+        -- Swiping up in the middle of the page, from anywhere between the side edges
+        -- down to the very bottom (like KindleOS, this replaces KOReader's swipe-up
+        -- settings panel; tapping the bottom still opens that). Works in both open modes.
+        { id = SWIPE_UP_ID, ges = "swipe",
+          screen_zone = { ratio_x = 1/8, ratio_y = 1/8, ratio_w = 3/4, ratio_h = 7/8 },
+          overrides = { "readerconfigmenu_ext_swipe", "readerconfigmenu_swipe", "rolling_swipe", "paging_swipe" },
+          handler = swipeUp },
+        -- a slow drag up from the bottom strip (KOReader opens its panel on that too)
+        { id = SWIPE_UP_PAN_ID, ges = "pan",
+          screen_zone = { ratio_x = 1/8, ratio_y = 4/5, ratio_w = 3/4, ratio_h = 1/5 },
+          overrides = { "readerconfigmenu_ext_pan", "readerconfigmenu_pan", "rolling_pan", "paging_pan" },
+          handler = swipeUp },
         { id = TOP_EXT_PAN_ID, ges = "pan", screen_zone = sz(menu_ext),
           overrides = { "readermenu_ext_pan", "readermenu_pan", TOP_PAN_ID, "rolling_pan", "paging_pan" }, handler = onSwipe },
     })
@@ -449,12 +523,16 @@ end
 
 -- ------------------------------------------------------------ the overlay
 
-function KindleToolbar:showToolbar()
+--- `mid_gesture`: the toolbar is opened while a finger is still on the screen (a slow
+--- drag). The rest of that same gesture is then ignored by the toolbar, so it can't
+--- land on the slider and jump to another page.
+function KindleToolbar:showToolbar(mid_gesture)
     if self.hud then return end
     local ToolbarWidget = require("kindletoolbar_widget")
     self.hud = ToolbarWidget:new{
         ui = self.ui,
         plugin = self,
+        swallow_gesture = mid_gesture and true or nil,
     }
     UIManager:show(self.hud)
 end
@@ -618,7 +696,7 @@ function KindleToolbar:buildSettingsItems(zone_names, zone_items, mode_names, mo
                     local m = self:getOpenMode()
                     return _("Open the toolbar from") .. ": " .. (m and OPEN_MODE_NAMES[m] or _("custom"))
                 end,
-                help_text = _("Also in the toolbar's ⋮ menu: Open Toolbar With…"),
+                help_text = _("Where a tap opens the toolbar. Whichever you pick, swiping up in the middle of the page also opens it (like KindleOS). Also in the toolbar's ⋮ menu: Open Toolbar With…"),
                 sub_item_table_func = function()
                     local sub = {}
                     for _i, mode in ipairs(OPEN_MODES) do
@@ -659,10 +737,19 @@ function KindleToolbar:buildSettingsItems(zone_names, zone_items, mode_names, mo
             },
             {
                 text = _("Swiping down from the top opens the toolbar"),
-                help_text = _("Instead of KOReader's menu."),
+                help_text = _("Off by default, like KindleOS: swiping down from the top opens KOReader's menu."),
                 checked_func = function() return self.settings.top_swipe end,
                 callback = function()
                     self.settings.top_swipe = not self.settings.top_swipe
+                    self:saveSettings()
+                end,
+            },
+            {
+                text = _("Swiping up in the middle of the page opens the toolbar"),
+                help_text = _("Like KindleOS, from anywhere in the middle down to the very bottom of the page. Works whichever place you chose under 'Open the toolbar from'. KOReader's settings panel still opens with a tap at the bottom. Not in continuous (scroll) mode, where swiping up scrolls."),
+                checked_func = function() return self.settings.swipe_up end,
+                callback = function()
+                    self.settings.swipe_up = not self.settings.swipe_up
                     self:saveSettings()
                 end,
                 separator = true,
@@ -741,7 +828,18 @@ function KindleToolbar:buildSettingsItems(zone_names, zone_items, mode_names, mo
                 end,
             },
             {
+                text = _("Status bar: same as the home screen"),
+                help_text = _("When a home-screen plugin with its own status bar is installed (such as KindleUI or SimpleUI), the toolbar shows that exact status bar: the same items, order and look. Add or remove an item there and it changes here too. Without such a plugin, or with this off, the toolbar uses its own status bar."),
+                enabled_func = function() return self:getHomePlugin() ~= nil end,
+                checked_func = function() return self.settings.mirror_home_statusbar and self:getHomePlugin() ~= nil end,
+                callback = function()
+                    self.settings.mirror_home_statusbar = not self.settings.mirror_home_statusbar
+                    self:saveSettings()
+                end,
+            },
+            {
                 text = _("Hide the Wi-Fi icon when Wi-Fi is off"),
+                help_text = _("For the toolbar's own status bar."),
                 checked_func = function() return self.settings.hide_wifi_off end,
                 callback = function()
                     self.settings.hide_wifi_off = not self.settings.hide_wifi_off
@@ -764,7 +862,7 @@ end
 
 --- "middle_top", "top", or nil for a custom mix (set with the finer switches).
 function KindleToolbar:getOpenMode()
-    local top = self.settings.top_tap or self.settings.top_swipe
+    local top = self.settings.top_tap
     if self.settings.enabled and top then return "middle_top" end
     if not self.settings.enabled and top then return "top" end
 end
@@ -778,7 +876,6 @@ function KindleToolbar:setOpenMode(mode)
         return
     end
     self.settings.top_tap = true
-    self.settings.top_swipe = true
     self:saveSettings()
 end
 

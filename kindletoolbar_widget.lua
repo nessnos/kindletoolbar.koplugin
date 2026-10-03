@@ -530,6 +530,10 @@ function KindleToolbarWidget:init()
     end
 
     self.page_count = self.ui.document:getPageCount()
+    if self.swallow_gesture then
+        -- never keep ignoring input for long, whatever happens to that drag
+        UIManager:scheduleIn(5, function() self.swallow_gesture = nil end)
+    end
     self.zoom = self.plugin.settings.zoom_pages ~= false
     self.images = {}      -- page -> scaled blitbuffer we own
     self.pending = {}     -- page -> true while a thumbnail is being generated
@@ -682,12 +686,33 @@ function KindleToolbarWidget:buildTop()
         background = WHITE,
         VerticalGroup:new{
             align = "left",
-            HorizontalGroup:new{ pad_span, HorizontalSpan:new{ width = S(8) }, status_row },
+            self:mirroredStatusRow() or HorizontalGroup:new{ pad_span, HorizontalSpan:new{ width = S(8) }, status_row },
             HorizontalGroup:new{ pad_span, toolbar_row },
             LineWidget:new{ background = LIGHT, dimen = Geom:new{ w = self.screen_w, h = Size.line.medium } },
             HorizontalGroup:new{ pad_span, title_row },
             LineWidget:new{ background = BLACK, dimen = Geom:new{ w = self.screen_w, h = Size.line.thick } },
         },
+    }
+end
+
+--- The home screen's own status bar (clock, Wi-Fi, battery… exactly as configured
+--- there), when a home-screen plugin built on SimpleUI's top bar is active (KindleUI,
+--- SimpleUI). Returns nil otherwise, and the toolbar draws its own status row.
+function KindleToolbarWidget:mirroredStatusRow()
+    if not self.plugin.settings.mirror_home_statusbar then return nil end
+    if not self.plugin:getHomePlugin() then return nil end
+    local ok, TB = pcall(require, "screens/sui_topbar")
+    if not ok or type(TB) ~= "table" or type(TB.buildTopbarWidget) ~= "function" then return nil end
+    -- its settings may have changed since it was last drawn
+    if TB.invalidateConfigCache then pcall(TB.invalidateConfigCache) end
+    local ok2, bar = pcall(TB.buildTopbarWidget)
+    if not ok2 or type(bar) ~= "table" or not bar.getSize then
+        if not ok2 then require("logger").warn("kindletoolbar: home status bar failed:", bar) end
+        return nil
+    end
+    return Tappable:new{
+        callback = function() self:openMainMenu() end,
+        bar,
     }
 end
 
@@ -1316,6 +1341,21 @@ end
 
 function KindleToolbarWidget:onHudGesture(_, ev)
     local g, pos = ev.ges, ev.pos
+    if self.swallow_gesture then
+        -- The toolbar was opened by a slow drag that is still going on: ignore the rest
+        -- of that drag (it would otherwise hit the slider at the bottom), until the
+        -- finger lifts.
+        if g == "touch" then
+            -- a new finger-down: that drag is over, handle this one normally
+            self.swallow_gesture = nil
+        else
+            if g == "pan_release" or g == "hold_release" or g == "swipe"
+                    or g == "tap" or g == "double_tap" then
+                self.swallow_gesture = nil
+            end
+            return true
+        end
+    end
     if g == "touch" then
         if self:inSlider(pos) then
             self.dragging = true
