@@ -1170,6 +1170,19 @@ function KindleToolbarWidget:closeAnd(fn)
     if fn then fn() end
 end
 
+--- Same as swiping down from the top while reading: KOReader's own handler (which may
+--- also show its bottom settings panel), or plain main menu as a fallback.
+function KindleToolbarWidget:openMenuFromSwipe(ev)
+    local ui = self.ui
+    self:closeAnd(function()
+        local menu = ui.menu
+        if not menu then return end
+        local swipe_ev = { ges = "swipe", direction = "south", pos = ev.start_pos or ev.pos }
+        local ok, handled = pcall(menu.onSwipeShowMenu, menu, swipe_ev)
+        if not (ok and handled) then menu:onShowMenu() end
+    end)
+end
+
 function KindleToolbarWidget:openMainMenu()
     self:closeAnd(function()
         if self.ui.menu then self.ui.menu:onShowMenu() end
@@ -1353,6 +1366,14 @@ function KindleToolbarWidget:onHudGesture(_, ev)
                     or g == "tap" or g == "double_tap" then
                 self.swallow_gesture = nil
             end
+            return true
+        end
+    end
+    -- Swipe (or slow drag) down from the top edge: KOReader's menu, as when reading.
+    if (g == "swipe" or g == "pan") and ev.direction == "south" and not self.dragging then
+        local start = g == "pan" and ev.start_pos or pos
+        if start and start.y < self.screen_h / 8 then
+            self:openMenuFromSwipe(ev)
             return true
         end
     end
